@@ -1,3 +1,5 @@
 /train/train.csv
 /test/test.csv
-/Lib
+/Lib/site-packages
+/Lib/tcl8.6
+/Scripts
