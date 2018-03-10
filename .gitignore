@@ -4,3 +4,5 @@
 /Lib/tcl8.6
 /Scripts
 /test_pickle
+/train_data_segments
+
