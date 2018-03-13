@@ -1,6 +1,8 @@
 import pickle
 import os
+import numpy
 import pandas as pd
+
 
 def importCSV(path,rows_to_skip):
     data_frame = pd.read_csv(path,skiprows=rows_to_skip)

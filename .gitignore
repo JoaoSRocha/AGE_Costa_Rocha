@@ -3,3 +3,9 @@
 /Lib/site-packages
 /Lib/tcl8.6
 /Scripts
+/test_pickle
+/train_data_segments
+/.directory
+/__pycache__
+/feature_matrix.pkl
+/labels.pkl
