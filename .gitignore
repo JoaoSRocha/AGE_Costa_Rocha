@@ -1,11 +1,7 @@
-/train/train.csv
-/test/test.csv
-/Lib/site-packages
-/Lib/tcl8.6
-/Scripts
-/test_pickle
-/train_data_segments
-/.directory
-/__pycache__
+/pickled_test_data
+/pickled_train_data
+/pickled_train_data_segments
 /feature_matrix.pkl
+/features_2018-03-13_14-51-08.pkl
+/labels_2018-03-13_14-51-08.pkl
 /labels.pkl
