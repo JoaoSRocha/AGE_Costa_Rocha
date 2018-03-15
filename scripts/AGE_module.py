@@ -12,6 +12,7 @@ Module for all the useful functions for this project
 import numpy as np
 import os
 import pickle
+import matplotlib.pyplot as plt
 from datetime import datetime
 
 # Global Variables (paths):
@@ -19,6 +20,16 @@ ROOT_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/'
 TRAIN_DATA_PATH = 'pickled_train_data_segments/'
 TEST_DATA_PATH = 'pickled_test_data/'
 SCRIPTS_PATH = 'scripts/'
+
+#%% plot signals
+def plot_signal_from_file(filepath):
+    os.chdir(ROOT_PATH)
+    with open(filepath,'rb') as f:
+        sequence = pickle.load(f)
+        
+    time = sequence[:,0]
+    axis = sequence[:,1:4]
+    plt.plot(time,axis)
 
 #%% extract_features function
 
