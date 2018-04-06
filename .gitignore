@@ -1,11 +1,5 @@
-/train/train.csv
-/test/test.csv
-/Lib/site-packages
-/Lib/tcl8.6
-/Scripts
-/test_pickle
-/train_data_segments
-/.directory
-/__pycache__
-/feature_matrix.pkl
-/labels.pkl
+/Trainset.rar
+/all.txt
+/Trainset
+/sensors-17-02735.pdf
+/pickled_data
