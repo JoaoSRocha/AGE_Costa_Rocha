@@ -17,16 +17,21 @@ from collections import Counter
 PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/'
 PICKLE_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/pickled_data/'
 DATASET_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/Trainset/'
+TESTSET_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/Testset/'
+TESTSET_PICKLE_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/test_pickled_data/'
 
-def create_pickles():
+def create_pickles(dataset_path):
     # creates .pkl files for each user in the dataset
     # each user has a list of sessions
     # each session is divided into each sensor readings
     # sensor readings are a numpy array with timestamp and readings
     
     # gets all users
-    user_list = os.listdir(DATASET_PATH)
-    user_list.remove('readme.txt')
+    user_list = os.listdir(dataset_path)
+    try:
+        user_list.remove('readme.txt')
+    except ValueError:
+        pass
     
     #columns of the .txt files 
     colnames = ['sensor','timestamp','reading_x', 'reading_y', 'reading_z', 'discard']
@@ -35,7 +40,8 @@ def create_pickles():
     for user in user_list:
         print(user)
         # gets all sessions of a user
-        session_list = os.listdir(DATASET_PATH+user)
+        session_list = os.listdir(dataset_path+user)
+        session_list.sort(key = lambda f: int(f))
         
         #store here data to pickle
         toPickle = []
@@ -43,10 +49,13 @@ def create_pickles():
         #iterate through each user session
         for session in session_list:
             print(session)
-            path = DATASET_PATH + user + '/' + session + '/all.txt'
+            path = dataset_path + user + '/' + session + '/all.txt'
             
             # read the file
             data = pd.read_csv(path, names = colnames)
+            # subtract first timestamp to all
+            min_timestamp = data['timestamp'].min()
+            data['timestamp'] = data['timestamp'].sub(min_timestamp)
             # determine rows with different sensors
             bool_acc = data['sensor'] == 'A'
             bool_gyro = data['sensor'] == 'G'
@@ -60,7 +69,7 @@ def create_pickles():
             print('session done')
         
         #create the pickle file
-        with open(PICKLE_PATH+user+'.pkl','wb') as outfile:
+        with open(TESTSET_PICKLE_PATH+user+'.pkl','wb') as outfile:
             P.dump(toPickle, outfile, -1)
         # counter
         print('user done')
@@ -122,6 +131,11 @@ def load_dev():
         dev = P.load(f)
     return dev[0]
 
+def load_test():
+    with open(TESTSET_PICKLE_PATH + 'idX.pkl','rb') as f:
+        test = P.load(f)
+    return test
+
 def load_user(userID):
     # user ID is just a number
     file = 'id'+str(userID)+'.pkl'
@@ -131,7 +145,7 @@ def load_user(userID):
     return data
 
 def walk_detection(sessionData, N = 5, neig_size = 9, thresh_max_frequency = 7,
-            thresh_min_energy=.5, thresh_max_energy=7, thresh_min_duration = 5, 
+            thresh_min_energy=.5, thresh_max_energy=7, thresh_min_duration = 10, 
             plot=False):
     # detects walk segments
     # returns a list of tuples with the sensor info for each walking segment
@@ -342,5 +356,36 @@ def extract_intervals(labelVector):
     true_seqs = np.where(seq_matrix[:,2]==1)
     true_matrix = seq_matrix[true_seqs]
     return true_matrix[:,0:2]
-    
 
+def preprocess_walk_segment(walkSeg_original, FS = 100):
+    # performs linear interpolation at a fixed sampling rate
+    walkSeg = list(walkSeg_original)
+    min_timestamp = np.min([np.min(sensor[:,0]) for sensor in walkSeg])
+    max_timestamp = np.max([np.max(sensor[:,0]) for sensor in walkSeg])
+    diff = max_timestamp - min_timestamp
+    
+    interpTime = np.arange(0, diff, 1/FS)
+    
+    interpSensors = []
+    for sensor in walkSeg: 
+        interpSensor = np.zeros((len(interpTime),4))
+        interpSensor[:,0] = interpTime
+        for axis in [1,2,3]:
+            interpSensor[:,axis] = np.interp(interpTime, sensor[:,0]-min_timestamp, sensor[:,axis])
+        interpSensors.append(interpSensor)
+    
+    return tuple(interpSensors)
+
+def divide_walk_segment(walkSeg, length = 100, stride = 50):
+    for sensor in walkSeg:
+        windows = [sensor[i*stride:i*stride+length,:] for i in range(np.shape(sensor)[0] // stride)]
+    return 0
+    
+def window_feature_extraction(walkSeg_window):
+    # based on Nickel et al.
+    
+    FEATURES = [] #feature list
+    # statistical features:
+    
+    
+    
