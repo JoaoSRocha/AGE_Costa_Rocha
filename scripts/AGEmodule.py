@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from scipy.signal import stft
 from sklearn.cluster import KMeans
 from collections import Counter
+from speechpy.feature import mfcc
 
 PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/'
 PICKLE_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/pickled_data/'
@@ -357,7 +358,7 @@ def extract_intervals(labelVector):
     true_matrix = seq_matrix[true_seqs]
     return true_matrix[:,0:2]
 
-def preprocess_walk_segment(walkSeg_original, FS = 100):
+def preprocess_walk_segment(walkSeg_original, FS = 100, cut_length = 1):
     # performs linear interpolation at a fixed sampling rate
     walkSeg = list(walkSeg_original)
     min_timestamp = np.min([np.min(sensor[:,0]) for sensor in walkSeg])
@@ -368,24 +369,113 @@ def preprocess_walk_segment(walkSeg_original, FS = 100):
     
     interpSensors = []
     for sensor in walkSeg: 
-        interpSensor = np.zeros((len(interpTime),4))
+        length_samples = len(interpTime)
+        interpSensor = np.zeros((length_samples,4))
         interpSensor[:,0] = interpTime
         for axis in [1,2,3]:
             interpSensor[:,axis] = np.interp(interpTime, sensor[:,0]-min_timestamp, sensor[:,axis])
-        interpSensors.append(interpSensor)
+        
+        # cut the first and last second of the segment
+        cut_interval = cut_length*FS
+        interpSensor_cut = np.zeros((length_samples-2*cut_interval,4))
+        interpSensor_cut[:,:] = interpSensor[cut_interval:-cut_interval,:]
+        interpSensors.append(interpSensor_cut)
     
     return tuple(interpSensors)
 
-def divide_walk_segment(walkSeg, length = 100, stride = 50):
-    for sensor in walkSeg:
-        windows = [sensor[i*stride:i*stride+length,:] for i in range(np.shape(sensor)[0] // stride)]
-    return 0
+def divide_walk_segment(walkSeg, length_sec = 7.5, stride_frac = .5):
+    FS = 1/(walkSeg[0][1,0]-walkSeg[0][0,0])
+    length = int(length_sec*FS)
+    stride = round(length*stride_frac)
+    w_acc = [walkSeg[0][i*stride:i*stride+length,:] for i in range(np.shape(walkSeg[0])[0] // stride)]
+    w_gyr = [walkSeg[1][i*stride:i*stride+length,:] for i in range(np.shape(walkSeg[1])[0] // stride)]
+    w_mag = [walkSeg[2][i*stride:i*stride+length,:] for i in range(np.shape(walkSeg[2])[0] // stride)]
+    list_of_windows = []
+    for i in range(len(w_acc)-1):
+        list_of_windows.append((w_acc[i],w_gyr[i],w_mag[i]))
+    return list_of_windows
     
 def window_feature_extraction(walkSeg_window):
     # based on Nickel et al.
     
     FEATURES = [] #feature list
-    # statistical features:
+    FS = 1/(walkSeg_window[0][1,0]-walkSeg_window[0][0,0]) #already interpolated
+
+    # sensor data
+    ACC = walkSeg_window[0]
+    GYR = walkSeg_window[1]
+    MAG = walkSeg_window[2]
     
+    # features for acceleration and gyro
+    for sensor in [ACC,GYR]:
+        mag = get_mag(sensor)
+        
+        # mean
+        x_mean = np.mean(sensor[:,1])
+        y_mean = np.mean(sensor[:,2])
+        z_mean = np.mean(sensor[:,3])
+        m_mean = np.mean(mag[:,1])
+        FEATURES.extend((x_mean,y_mean,z_mean,m_mean))
+        
+        # minimum
+        x_min = np.min(sensor[:,1])
+        y_min = np.min(sensor[:,2])
+        z_min = np.min(sensor[:,3])
+        m_min = np.min(mag[:,1])
+        FEATURES.extend((x_min,y_min,z_min,m_min))
+        
+        # maximum
+        x_max = np.max(sensor[:,1])
+        y_max = np.max(sensor[:,2])
+        z_max = np.max(sensor[:,3])
+        m_max = np.max(mag[:,1])
+        FEATURES.extend((x_max,y_max,z_max,m_max))
+        
+        # standard deviation
+        x_std = np.max(sensor[:,1])
+        y_std = np.max(sensor[:,2])
+        z_std = np.max(sensor[:,3])
+        m_std = np.max(mag[:,1])
+        FEATURES.extend((x_std,y_std,z_std,m_std))
+        
+        # difference between max and min
+        x_dif = x_max - x_min
+        y_dif = y_max - y_min
+        z_dif = z_max - z_min
+        m_dif = m_max - m_min
+        FEATURES.extend((x_dif,y_dif,z_dif,m_dif))
+        
+        # RMS
+        x_rms = np.sqrt(np.sum(np.square(sensor[:,1])/len(sensor[:,1])))
+        y_rms = np.sqrt(np.sum(np.square(sensor[:,2])/len(sensor[:,2])))
+        z_rms = np.sqrt(np.sum(np.square(sensor[:,3])/len(sensor[:,3])))
+        m_rms = np.sqrt(np.sum(np.square(mag[:,1])/len(mag[:,1])))
+        FEATURES.extend((x_rms,y_rms,z_rms,m_rms))
+        
+        # zero crossings
+        x_cross = count_sign_changes(sensor[:,1]-x_mean)
+        y_cross = count_sign_changes(sensor[:,2]-y_mean)
+        z_cross = count_sign_changes(sensor[:,3]-z_mean)
+        FEATURES.extend((x_cross,y_cross,z_cross))
+        
+        # 10 bin histogram count
+        x_bin, _ = np.histogram(sensor[:,1],bins=10)
+        y_bin, _ = np.histogram(sensor[:,2],bins=10)
+        z_bin, _ = np.histogram(sensor[:,3],bins=10)
+        m_bin, _ = np.histogram(sensor[:,1],bins=10)
+        FEATURES.extend(x_bin)
+        FEATURES.extend(y_bin)
+        FEATURES.extend(z_bin)
+        FEATURES.extend(m_bin)
+
+        # MFCC
+        x_mfcc = mfcc(signal=sensor[:,1], sampling_frequency = FS, frame_length=1.44, frame_stride=.048, high_frequency=10)
+        
+    return FEATURES
+
+def count_sign_changes(a):
+    asign = np.sign(a)
+    signchange = ((np.roll(asign, 1) - asign) != 0).astype(int)
+    return np.sum(signchange)
     
     
