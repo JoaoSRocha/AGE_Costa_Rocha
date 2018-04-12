@@ -13,13 +13,16 @@ import matplotlib.pyplot as plt
 from scipy.signal import stft
 from sklearn.cluster import KMeans
 from collections import Counter
-from speechpy.feature import mfcc
+from python_speech_features import mfcc
+from copy import deepcopy
 
+USER_NUMBER = 26
 PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/'
 PICKLE_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/pickled_data/'
 DATASET_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/Trainset/'
 TESTSET_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/Testset/'
 TESTSET_PICKLE_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/test_pickled_data/'
+RESULTS_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/pickled_results/'
 
 def create_pickles(dataset_path):
     # creates .pkl files for each user in the dataset
@@ -70,7 +73,7 @@ def create_pickles(dataset_path):
             print('session done')
         
         #create the pickle file
-        with open(TESTSET_PICKLE_PATH+user+'.pkl','wb') as outfile:
+        with open(PICKLE_PATH+user+'.pkl','wb') as outfile:
             P.dump(toPickle, outfile, -1)
         # counter
         print('user done')
@@ -145,9 +148,34 @@ def load_user(userID):
         data = P.load(f)
     return data
 
-def walk_detection(sessionData, N = 5, neig_size = 9, thresh_max_frequency = 7,
-            thresh_min_energy=.5, thresh_max_energy=7, thresh_min_duration = 10, 
-            plot=False):
+def preprocess_session(sessionData, FS=100):
+    session = list(sessionData)
+    
+    # conversion to seconds
+    for sensor in session:
+        sensor[:,0] /= 1000000000
+    
+    min_timestamp = np.min([np.min(sensor[:,0]) for sensor in session])
+    max_timestamp = np.max([np.max(sensor[:,0]) for sensor in session])
+    diff = max_timestamp - min_timestamp
+    
+    interpTime = np.arange(0, diff, 1/FS)
+    
+    interpSensors = []
+    for sensor in session: 
+        length_samples = len(interpTime)
+        interpSensor = np.zeros((length_samples,4))
+        interpSensor[:,0] = interpTime
+        for axis in [1,2,3]:
+            interpSensor[:,axis] = np.interp(interpTime, sensor[:,0]-min_timestamp, sensor[:,axis])
+        interpSensors.append(interpSensor)
+    
+    return tuple(interpSensors)
+
+def walk_detection(session, N = 5, FS=100, 
+                   neig_size = 9, thresh_max_frequency = 7,
+                   thresh_min_energy=.5, thresh_max_energy=15,  
+                   thresh_min_duration = 10, plot=False):
     # detects walk segments
     # returns a list of tuples with the sensor info for each walking segment
     # parameters:
@@ -159,22 +187,21 @@ def walk_detection(sessionData, N = 5, neig_size = 9, thresh_max_frequency = 7,
     # thresh_min_duration - min duration in seconds for a segment to be considered
     # plot - plots the results of the segmentation
     
+    # preprocessing
+    sessionData = preprocess_session(session, FS=FS)
+    
     # get gyro data
     gyroMag = get_mag(sessionData[1])
-    # convert timestamps to seconds
-    gyroMag[:,0] /= 1000000000
     
     # get the mean sampling frequency from total time/samples
-    nSamples = np.shape(gyroMag)[0]
-    dt = gyroMag[-1,0] - gyroMag[0,0]
-    sampling_period = dt/nSamples
-    sampling_freq = 1/sampling_period
+    sampling_freq = FS
+    sampling_period = 1/sampling_freq
     
     # calculate the stft:
     # the length of the window is about .7 seconds
     WINDOW_LENGTH = 0.7
     # calculate the number of samples for that:
-    window_samples = WINDOW_LENGTH // sampling_period + 1 #+1 to ensure it is at least .7sec
+    window_samples = WINDOW_LENGTH / sampling_period
 
     shortFT = stft(gyroMag[:,1], fs=sampling_freq, nperseg=window_samples)
     shortFT_freqs = shortFT[0] #the calculated frequencies
@@ -185,8 +212,11 @@ def walk_detection(sessionData, N = 5, neig_size = 9, thresh_max_frequency = 7,
     shortFT_energy = np.abs(shortFT_spect)**2
     
     # as is common when dealing with power spectra
-    # consider the log of the energy of the signal    
+    # consider the log of the energy of the signal  
     log_energy = np.log(shortFT_energy)
+    infmask_all = np.isinf(log_energy)
+    infmask_time = np.any(infmask_all, axis=0)
+    hasinf = np.any(infmask_time)
     
     # apply a clustering method such as KMeans, with N clusters:
     # the goal here is to identify several different "modes" present in
@@ -202,7 +232,19 @@ def walk_detection(sessionData, N = 5, neig_size = 9, thresh_max_frequency = 7,
     # N is variable, but 5 clusters seem to give good results
     clust = KMeans(n_clusters=N, n_jobs=-1)
     # cluster using the log of the energy
-    labels = clust.fit_predict(log_energy.T)
+    if hasinf:
+        log_energy_noinf = log_energy[:,np.logical_not(infmask_time)]
+        clust.fit(log_energy_noinf.T)
+        labels = np.zeros(np.shape(shortFT_energy)[1])
+        index_inf = np.where(infmask_time)[0]
+        for i in range(len(labels)):
+            time_interval = log_energy[:,i]
+            if i in index_inf:
+                labels[i]=0
+            else:    
+                labels[i] = clust.predict(time_interval.reshape(1,-1))
+    else:
+        labels = clust.fit_predict(log_energy.T)
 
     # The resulting cluster centers
     # Each one is an "average" behaviour present in the signal
@@ -237,7 +279,7 @@ def walk_detection(sessionData, N = 5, neig_size = 9, thresh_max_frequency = 7,
     
     # go through all the labels
     for i in range(len(labels)):
-        label = labels[i]
+        label = int(labels[i])
         
         # and replace according to the center behaviour
         if centers_static[label]:
@@ -290,11 +332,6 @@ def walk_detection(sessionData, N = 5, neig_size = 9, thresh_max_frequency = 7,
     gyro_sensor = np.copy(sessionData[1])
     mag_sensor = np.copy(sessionData[2])
     
-    # convert timestamp to seconds
-    acc_sensor[:,0] /= 1000000000
-    gyro_sensor[:,0] /= 1000000000
-    mag_sensor[:,0] /= 1000000000
-    
     # extract each segment and store it in a list
     segments = []
     new_labels = np.zeros(np.shape(reduced_labels))
@@ -326,7 +363,7 @@ def walk_detection(sessionData, N = 5, neig_size = 9, thresh_max_frequency = 7,
         plt.figure()
         # plot the accelerometer readings
         ax1 = plt.subplot(3,1,1)
-        plt.plot(sessionData[0][:,0]/1000000000, sessionData[0][:,1:])
+        plt.plot(sessionData[0][:,0], sessionData[0][:,1:])
         
         plt.subplot(3,1,2, sharex=ax1)
         # plot the STFT of the gyro readings
@@ -361,24 +398,14 @@ def extract_intervals(labelVector):
 def preprocess_walk_segment(walkSeg_original, FS = 100, cut_length = 1):
     # performs linear interpolation at a fixed sampling rate
     walkSeg = list(walkSeg_original)
-    min_timestamp = np.min([np.min(sensor[:,0]) for sensor in walkSeg])
-    max_timestamp = np.max([np.max(sensor[:,0]) for sensor in walkSeg])
-    diff = max_timestamp - min_timestamp
-    
-    interpTime = np.arange(0, diff, 1/FS)
     
     interpSensors = []
     for sensor in walkSeg: 
-        length_samples = len(interpTime)
-        interpSensor = np.zeros((length_samples,4))
-        interpSensor[:,0] = interpTime
-        for axis in [1,2,3]:
-            interpSensor[:,axis] = np.interp(interpTime, sensor[:,0]-min_timestamp, sensor[:,axis])
-        
+        length_samples = len(sensor)
         # cut the first and last second of the segment
         cut_interval = cut_length*FS
         interpSensor_cut = np.zeros((length_samples-2*cut_interval,4))
-        interpSensor_cut[:,:] = interpSensor[cut_interval:-cut_interval,:]
+        interpSensor_cut[:,:] = sensor[cut_interval:-cut_interval,:]
         interpSensors.append(interpSensor_cut)
     
     return tuple(interpSensors)
@@ -404,7 +431,6 @@ def window_feature_extraction(walkSeg_window):
     # sensor data
     ACC = walkSeg_window[0]
     GYR = walkSeg_window[1]
-    MAG = walkSeg_window[2]
     
     # features for acceleration and gyro
     for sensor in [ACC,GYR]:
@@ -462,14 +488,21 @@ def window_feature_extraction(walkSeg_window):
         x_bin, _ = np.histogram(sensor[:,1],bins=10)
         y_bin, _ = np.histogram(sensor[:,2],bins=10)
         z_bin, _ = np.histogram(sensor[:,3],bins=10)
-        m_bin, _ = np.histogram(sensor[:,1],bins=10)
+        m_bin, _ = np.histogram(mag[:,1],bins=10)
         FEATURES.extend(x_bin)
         FEATURES.extend(y_bin)
         FEATURES.extend(z_bin)
         FEATURES.extend(m_bin)
 
         # MFCC
-        x_mfcc = mfcc(signal=sensor[:,1], sampling_frequency = FS, frame_length=1.44, frame_stride=.048, high_frequency=10)
+        x_mfcc = mfcc(signal=sensor[:,1], samplerate=FS, winlen=1.5, winstep=1.5, highfreq=10, preemph=0, ceplifter=0)
+        y_mfcc = mfcc(signal=sensor[:,2], samplerate=FS, winlen=1.5, winstep=1.5, highfreq=10, preemph=0, ceplifter=0)
+        z_mfcc = mfcc(signal=sensor[:,3], samplerate=FS, winlen=1.5, winstep=1.5, highfreq=10, preemph=0, ceplifter=0)
+        m_mfcc = mfcc(signal=mag[:,1], samplerate=FS, winlen=1.5, winstep=1.5, highfreq=10, preemph=0, ceplifter=0)
+        FEATURES.extend(x_mfcc.flatten())
+        FEATURES.extend(y_mfcc.flatten())
+        FEATURES.extend(z_mfcc.flatten())
+        FEATURES.extend(m_mfcc.flatten())
         
     return FEATURES
 
@@ -477,5 +510,10 @@ def count_sign_changes(a):
     asign = np.sign(a)
     signchange = ((np.roll(asign, 1) - asign) != 0).astype(int)
     return np.sum(signchange)
-    
-    
+
+def load_features_and_labels():
+    with open(RESULTS_PATH + 'features_09_04.pkl','rb') as f:
+        feats = P.load(f)
+    with open(RESULTS_PATH + 'labels_09_04.pkl','rb') as f:
+        labels = P.load(f)
+    return feats, labels
