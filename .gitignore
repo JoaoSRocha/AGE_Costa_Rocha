@@ -50,3 +50,7 @@
 /scripts/__pycache__/AGEmodule.cpython-36.pyc
 /pickled_results/labels_09_04.pkl
 /pickled_results/features_09_04.pkl
+/train_test.pkl
+/pickled_results/features_train_session.pkl
+/pickled_results/features_train_sessions.pkl
+/pickled_results/labels_train_session.pkl
