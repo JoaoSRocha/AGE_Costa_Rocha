@@ -41,25 +41,41 @@ def load_test_features():
 #%% Pipeline
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import RobustScaler
-from sklearn.feature_selection import SelectPercentile, mutual_info_classif, RFECV
+from sklearn.feature_selection import SelectPercentile, mutual_info_classif
 from sklearn.svm import SVC
 from sklearn.model_selection import GridSearchCV
 
 feature_processing = RobustScaler()
-
-svm_clf = SVC(max_iter = -1, probability = True, kernel='rbf')
+feature_selection = SelectPercentile(mutual_info_classif, percentile = 45)
+svm_clf = SVC(max_iter = -1, probability = True, kernel='rbf', C = 10, gamma = 0.001)
 
 pipe = Pipeline([('scale', feature_processing), 
-                 ('classifier', RFECV(estimator = svm_clf))])
-
-param_grid = dict(classifier__estimator__C = [0.001, 0.01, 0.1, 1, 10, 100, 1000],
-                  classifier__estimator__gamma = [ 0.01, 0.001, 0.0001])
-
-tuned_pipeline = GridSearchCV(estimator = pipe, param_grid=param_grid, 
-                              cv = 5, verbose = 10000, n_jobs = -1)
+                 ('selection', feature_selection),
+                 ('classifier', svm_clf)])
 
 #%% Pipeline training
 Xtrain, Ytrain = AGE.load_features_and_labels()
 
-tuned_pipeline.fit(Xtrain, Ytrain)
+pipe.fit(Xtrain, Ytrain)
+
+#%%
+Xtest = load_test_features()
+predictions = np.zeros((26,10))
+
+for i in range(10):
+    session = Xtest[i]
+    n_samples = len(session)
+    sample_probs = np.zeros((26,n_samples))
+    for j in range(n_samples):
+        sample_probs[:,j] = pipe.predict_proba(session[j,:].reshape(1,-1))
+    prod_prob = np.prod(sample_probs, axis=1)
+    norm_prob = prod_prob/np.sum(prod_prob)
+    predictions[:,i] = norm_prob
+
+predictions_mean = np.mean(predictions, axis=1)
+#%%
+from sklearn.metrics import classification_report, roc_curve, auc
+# probably id 18, which is line 17
+ytest = [17,17,17,17,17,17,17,17,17,17]
+
 
