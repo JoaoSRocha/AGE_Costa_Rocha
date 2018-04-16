@@ -57,7 +57,7 @@ pipe = Pipeline([('scale', feature_processing),
 Xtrain, Ytrain = AGE.load_features_and_labels()
 
 pipe.fit(Xtrain, Ytrain)
-
+print('training done')
 #%%
 Xtest = load_test_features()
 predictions = np.zeros((26,10))
@@ -68,14 +68,11 @@ for i in range(10):
     sample_probs = np.zeros((26,n_samples))
     for j in range(n_samples):
         sample_probs[:,j] = pipe.predict_proba(session[j,:].reshape(1,-1))
-    prod_prob = np.prod(sample_probs, axis=1)
-    norm_prob = prod_prob/np.sum(prod_prob)
+    mean_prob = np.mean(sample_probs, axis=1)
+    norm_prob = mean_prob/np.sum(mean_prob)
     predictions[:,i] = norm_prob
 
 predictions_mean = np.mean(predictions, axis=1)
-#%%
-from sklearn.metrics import classification_report, roc_curve, auc
-# probably id 18, which is line 17
-ytest = [17,17,17,17,17,17,17,17,17,17]
+print(predictions_mean)
 
 
