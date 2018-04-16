@@ -174,7 +174,7 @@ def preprocess_session(sessionData, FS=100):
 
 def walk_detection(session, N = 5, FS=100, 
                    neig_size = 9, thresh_max_frequency = 7,
-                   thresh_min_energy=.5, thresh_max_energy=15,  
+                   thresh_min_energy=.5, thresh_max_energy=8,  
                    thresh_min_duration = 10, plot=False):
     # detects walk segments
     # returns a list of tuples with the sensor info for each walking segment
@@ -364,15 +364,18 @@ def walk_detection(session, N = 5, FS=100,
         # plot the accelerometer readings
         ax1 = plt.subplot(3,1,1)
         plt.plot(sessionData[0][:,0], sessionData[0][:,1:])
+        plt.title('Accelerometer')
         
         plt.subplot(3,1,2, sharex=ax1)
         # plot the STFT of the gyro readings
         extent = np.min(time), np.max(time), np.min(freq), np.max(freq)
         plt.imshow(log_energy, extent=extent, aspect='auto')
+        plt.title('Gyro Magnitude STFT (w=0.7 s)')
         
         plt.subplot(3,1,3, sharex=ax1)
         # plot the original KKMeans labels and the reduced ones
         plt.plot(time, new_labels)
+        plt.title('Walk Segments')
         
     return segments
 
