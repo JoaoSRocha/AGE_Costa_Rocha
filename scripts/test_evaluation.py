@@ -45,21 +45,45 @@ from sklearn.feature_selection import SelectPercentile, mutual_info_classif, RFE
 from sklearn.svm import SVC
 from sklearn.model_selection import GridSearchCV
 
-feature_processing = RobustScaler()
+if __name__ =="__main__":
+    feature_processing = RobustScaler()
 
-svm_clf = SVC(max_iter = -1, probability = True, kernel='rbf')
+    svm_clf = SVC(max_iter = -1, probability = True, kernel='rbf')
 
-pipe = Pipeline([('scale', feature_processing), 
-                 ('classifier', RFECV(estimator = svm_clf))])
+    from tempfile import mkdtemp
+    cachedir = mkdtemp()
 
-param_grid = dict(classifier__estimator__C = [0.001, 0.01, 0.1, 1, 10, 100, 1000],
-                  classifier__estimator__gamma = [ 0.01, 0.001, 0.0001])
+    # pipe = Pipeline([('scale', feature_processing),
+    #                  ('selection',feature_selection),
+    #                  ('classifier', svm_clf)],
+    #                 memory = cachedir)
 
-tuned_pipeline = GridSearchCV(estimator = pipe, param_grid=param_grid, 
-                              cv = 5, verbose = 10000, n_jobs = -1)
+    #%% Pipeline training
+    Xtrain, Ytrain = AGE.load_features_and_labels()
 
-#%% Pipeline training
-Xtrain, Ytrain = AGE.load_features_and_labels()
+    Xtrain_processed = feature_processing.fit_transform(Xtrain,Ytrain)
 
-tuned_pipeline.fit(Xtrain, Ytrain)
+    params = []
+    scores = []
+    for perc in [10,15,20,25,30, 35, 40, 45, 50]:
+        print(perc, ' percent')
+        feature_selection = SelectPercentile(mutual_info_classif, percentile=perc)
+        Xtrain_selected = feature_selection.fit_transform(Xtrain_processed, Ytrain)
+
+        param_grid = dict(C = [ 10, 100, 1000,10000],
+                          gamma = [ 0.01, 0.001, 0.0001])
+
+        tuned_pipeline = GridSearchCV(estimator = svm_clf, param_grid=param_grid,
+                                      cv = 3, verbose = 10000,n_jobs=-1)
+
+        tuned_pipeline.fit(Xtrain_selected,Ytrain)
+
+        print('Best parameters for ', perc, '%: ', tuned_pipeline.best_params_)
+        print('Best score for  ', perc, '%: ', tuned_pipeline.best_score_)
+        params.append(tuned_pipeline.best_params_)
+        scores.append(tuned_pipeline.best_score_)
+
+    print(scores)
+
+
 

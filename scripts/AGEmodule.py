@@ -17,12 +17,12 @@ from python_speech_features import mfcc
 from copy import deepcopy
 
 USER_NUMBER = 26
-PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/'
+PATH = 'D:/Users/joao/PycharmProjects/AGE_Costa_Rocha'
 PICKLE_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/pickled_data/'
 DATASET_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/Trainset/'
 TESTSET_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/Testset/'
 TESTSET_PICKLE_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/test_pickled_data/'
-RESULTS_PATH = '/home/togepi/feup-projects/AGE_Costa_Rocha/pickled_results/'
+RESULTS_PATH = PATH+"/pickled_results/"
 
 def create_pickles(dataset_path):
     # creates .pkl files for each user in the dataset
